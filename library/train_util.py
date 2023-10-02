@@ -1364,7 +1364,10 @@ class DreamBoothDataset(BaseDataset):
                 print(f"not directory: {subset.image_dir}")
                 return [], []
 
-            img_paths = glob_images(subset.image_dir, "*")
+            # img_paths = glob_images(subset.image_dir, "*")
+            img_path_jpg = list(glob.glob(os.path.join(subset.image_dir, "**/*.jpg")))
+            img_path_png = list(glob.glob(os.path.join(subset.image_dir, "**/*.png")))
+            img_paths = img_path_jpg + img_path_png
             print(f"found directory {subset.image_dir} contains {len(img_paths)} image files")
 
             # 画像ファイルごとにプロンプトを読み込み、もしあればそちらを使う
@@ -1765,7 +1768,7 @@ class ControlNetDataset(BaseDataset):
             )
 
         assert len(missing_imgs) == 0, f"missing conditioning data for {len(missing_imgs)} images: {missing_imgs}"
-        assert len(extra_imgs) == 0, f"extra conditioning data for {len(extra_imgs)} images: {extra_imgs}"
+        # assert len(extra_imgs) == 0, f"extra conditioning data for {len(extra_imgs)} images: {extra_imgs}"
 
         self.conditioning_image_transforms = IMAGE_TRANSFORMS
 
@@ -2985,7 +2988,7 @@ def add_training_arguments(parser: argparse.ArgumentParser, support_dreambooth: 
     parser.add_argument(
         "--config_file",
         type=str,
-        default=None,
+        default="test.toml",
         help="using .toml instead of args to pass hyperparameter / ハイパーパラメータを引数ではなく.tomlファイルで渡す",
     )
     parser.add_argument(
@@ -3264,7 +3267,6 @@ def read_config_from_file(args: argparse.Namespace, parser: argparse.ArgumentPar
 
         print(f"Saved config file / 設定ファイルを保存しました: {config_path}")
         exit(0)
-
     if not os.path.exists(config_path):
         print(f"{config_path} not found.")
         exit(1)
