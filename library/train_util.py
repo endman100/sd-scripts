@@ -4660,7 +4660,7 @@ class ImageLoadingDataset(torch.utils.data.Dataset):
 
 
 # collate_fn用 epoch,stepはmultiprocessing.Value
-class collater_class:
+class collator_class:
     def __init__(self, epoch, step, dataset):
         self.current_epoch = epoch
         self.current_step = step
