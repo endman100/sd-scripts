@@ -1065,7 +1065,7 @@ class BaseDataset(torch.utils.data.Dataset):
 
             flipped = subset.flip_aug and random.random() < 0.5  # not flipped or flipped with 50% chance
 
-            # image/latentsを処理する
+            # latentsを処理する
             if image_info.latents is not None:  # cache_latents=Trueの場合
                 original_size = image_info.latents_original_size
                 crop_ltrb = image_info.latents_crop_ltrb  # calc values later if flipped
@@ -1073,8 +1073,6 @@ class BaseDataset(torch.utils.data.Dataset):
                     latents = image_info.latents
                 else:
                     latents = image_info.latents_flipped
-
-                image = None
             elif image_info.latents_npz is not None:  # FineTuningDatasetまたはcache_latents_to_disk=Trueの場合
                 latents, original_size, crop_ltrb, flipped_latents = load_latents_from_disk(image_info.latents_npz)
                 if flipped:
@@ -1082,48 +1080,45 @@ class BaseDataset(torch.utils.data.Dataset):
                     del flipped_latents
                 latents = torch.FloatTensor(latents)
 
-                image = None
+            # imageを処理する
+            # 画像を読み込み、必要ならcropする
+            img, face_cx, face_cy, face_w, face_h = self.load_image_with_face_info(subset, image_info.absolute_path)
+            im_h, im_w = img.shape[0:2]
+
+            if self.enable_bucket:
+                img, original_size, crop_ltrb = trim_and_resize_if_required(
+                    subset.random_crop, img, image_info.bucket_reso, image_info.resized_size
+                )
             else:
-                # 画像を読み込み、必要ならcropする
-                img, face_cx, face_cy, face_w, face_h = self.load_image_with_face_info(subset, image_info.absolute_path)
-                im_h, im_w = img.shape[0:2]
-
-                if self.enable_bucket:
-                    img, original_size, crop_ltrb = trim_and_resize_if_required(
-                        subset.random_crop, img, image_info.bucket_reso, image_info.resized_size
-                    )
-                else:
-                    if face_cx > 0:  # 顔位置情報あり
-                        img = self.crop_target(subset, img, face_cx, face_cy, face_w, face_h)
-                    elif im_h > self.height or im_w > self.width:
-                        assert (
-                            subset.random_crop
-                        ), f"image too large, but cropping and bucketing are disabled / 画像サイズが大きいのでface_crop_aug_rangeかrandom_crop、またはbucketを有効にしてください: {image_info.absolute_path}"
-                        if im_h > self.height:
-                            p = random.randint(0, im_h - self.height)
-                            img = img[p : p + self.height]
-                        if im_w > self.width:
-                            p = random.randint(0, im_w - self.width)
-                            img = img[:, p : p + self.width]
-
-                    im_h, im_w = img.shape[0:2]
+                if face_cx > 0:  # 顔位置情報あり
+                    img = self.crop_target(subset, img, face_cx, face_cy, face_w, face_h)
+                elif im_h > self.height or im_w > self.width:
                     assert (
-                        im_h == self.height and im_w == self.width
-                    ), f"image size is small / 画像サイズが小さいようです: {image_info.absolute_path}"
+                        subset.random_crop
+                    ), f"image too large, but cropping and bucketing are disabled / 画像サイズが大きいのでface_crop_aug_rangeかrandom_crop、またはbucketを有効にしてください: {image_info.absolute_path}"
+                    if im_h > self.height:
+                        p = random.randint(0, im_h - self.height)
+                        img = img[p : p + self.height]
+                    if im_w > self.width:
+                        p = random.randint(0, im_w - self.width)
+                        img = img[:, p : p + self.width]
 
-                    original_size = [im_w, im_h]
-                    crop_ltrb = (0, 0, 0, 0)
+                im_h, im_w = img.shape[0:2]
+                assert (
+                    im_h == self.height and im_w == self.width
+                ), f"image size is small / 画像サイズが小さいようです: {image_info.absolute_path}"
 
-                # augmentation
-                aug = self.aug_helper.get_augmentor(subset.color_aug)
-                if aug is not None:
-                    img = aug(image=img)["image"]
+                original_size = [im_w, im_h]
+                crop_ltrb = (0, 0, 0, 0)
 
-                if flipped:
-                    img = img[:, ::-1, :].copy()  # copy to avoid negative stride problem
+            # augmentation
+            aug = self.aug_helper.get_augmentor(subset.color_aug)
+            if aug is not None:
+                img = aug(image=img)["image"]
 
-                latents = None
-                image = self.image_transforms(img)  # -1.0~1.0のtorch.Tensorになる
+            if flipped:
+                img = img[:, ::-1, :].copy()  # copy to avoid negative stride problem
+            image = self.image_transforms(img)  # -1.0~1.0のtorch.Tensorになる
 
             images.append(image)
             latents_list.append(latents)
@@ -1257,6 +1252,7 @@ class BaseDataset(torch.utils.data.Dataset):
 
             caption = image_info.caption  # TODO cache some patterns of dropping, shuffling, etc.
 
+            
             if self.caching_mode == "latents":
                 image = load_image(image_info.absolute_path)
             else:

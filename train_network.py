@@ -6,6 +6,7 @@ import os
 import sys
 import random
 import time
+import cv2
 import json
 from multiprocessing import Value
 import toml
@@ -25,6 +26,7 @@ except Exception:
 from accelerate.utils import set_seed
 from diffusers import DDPMScheduler
 from library import model_util
+from net_canny import CannyEdgeDetector
 
 import library.train_util as train_util
 from library.train_util import (
@@ -45,6 +47,8 @@ from library.custom_train_functions import (
     add_v_prediction_like_loss,
 )
 
+# debug
+torch.autograd.set_detect_anomaly(True)
 
 class NetworkTrainer:
     def __init__(self):
@@ -126,6 +130,17 @@ class NetworkTrainer:
     def sample_images(self, accelerator, args, epoch, global_step, device, vae, tokenizer, text_encoder, unet):
         train_util.sample_images(accelerator, args, epoch, global_step, device, vae, tokenizer, text_encoder, unet)
 
+    def decode_latents(self, vae, latents):
+        
+        latents = 1 / 0.18215 * latents
+        vae_dtype = vae.dtype
+        latents = latents.to(vae_dtype)
+        image = vae.decode(latents).sample
+        # image = (image / 2 + 0.5).clamp(0, 1)
+        # we always cast to float32 as this does not cause significant overhead and is compatible with bfloat16
+        # image = image.cpu().permute(0, 2, 3, 1).float().numpy()
+        return image
+    
     def train(self, args):
         session_id = random.randint(0, 2**32)
         training_started_at = time.time()
@@ -260,7 +275,7 @@ class NetworkTrainer:
             vae.eval()
             with torch.no_grad():
                 train_dataset_group.cache_latents(vae, args.vae_batch_size, args.cache_latents_to_disk, accelerator.is_main_process)
-            vae.to("cpu")
+            # vae.to("cpu")
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             gc.collect()
@@ -734,6 +749,20 @@ class NetworkTrainer:
                 accelerator.print(f"removing old checkpoint: {old_ckpt_file}")
                 os.remove(old_ckpt_file)
 
+
+        canny_model = CannyEdgeDetector(vae_dtype=vae_dtype, device=accelerator.device)
+        canny_model.to(accelerator.device)
+        canny_model.eval()
+        canny_model.requires_grad_(False)
+        for param in canny_model.parameters():
+            param.requires_grad = False
+
+        # vae.requires_grad_(False)
+        vae.eval()
+        for param in vae.parameters():
+            param.requires_grad = False
+
+
         # training loop
         for epoch in range(num_train_epochs):
             accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
@@ -795,12 +824,29 @@ class NetworkTrainer:
                         target = noise_scheduler.get_velocity(latents, noise, timesteps)
                     else:
                         target = noise
-
                     loss = torch.nn.functional.mse_loss(noise_pred.float(), target.float(), reduction="none")
                     loss = loss.mean([1, 2, 3])
 
                     loss_weights = batch["loss_weights"]  # 各sampleごとのweight
                     loss = loss * loss_weights
+
+                    with torch.no_grad():
+                        latents_pred = noisy_latents - noise_pred
+                        pre_image = self.decode_latents(vae, latents_pred)
+                        gt_image = batch["images"].to(dtype=vae_dtype)
+                        blurred_img, grad_mag, grad_orientation, thin_edges, thresholded, early_threshold = canny_model(pre_image)
+                        blurred_img_gt, grad_mag_gt, grad_orientation_gt, thin_edges_gt, thresholded_gt, early_threshold_gt = canny_model(gt_image)
+                        loss_canny = torch.nn.functional.mse_loss(thresholded, thresholded_gt, reduction="none")
+                        loss_canny = loss_canny.mean([1, 2, 3])
+                        # loss_image = torch.nn.functional.mse_loss(pre_image, gt_image, reduction="none")
+                        # loss_image = loss_image.mean([1, 2, 3])
+                        # print(loss_image)
+                    loss = loss + loss_canny
+                    # thin_edge_image = thresholded_gt[0].cpu().permute(1, 2, 0).float().numpy()
+                    # cv2.imshow("image", thin_edge_image)
+                    # cv2.waitKey(1)
+                    
+
 
                     if args.min_snr_gamma:
                         loss = apply_snr_weight(loss, timesteps, noise_scheduler, args.min_snr_gamma)
@@ -810,7 +856,6 @@ class NetworkTrainer:
                         loss = add_v_prediction_like_loss(loss, timesteps, noise_scheduler, args.v_pred_like_loss)
 
                     loss = loss.mean()  # 平均なのでbatch_sizeで割る必要なし
-
                     accelerator.backward(loss)
                     if accelerator.sync_gradients and args.max_grad_norm != 0.0:
                         params_to_clip = network.get_trainable_params()
@@ -819,6 +864,10 @@ class NetworkTrainer:
                     optimizer.step()
                     lr_scheduler.step()
                     optimizer.zero_grad(set_to_none=True)
+
+                    
+
+
 
                 if args.scale_weight_norms:
                     keys_scaled, mean_norm, maximum_norm = network.apply_max_norm_regularization(
