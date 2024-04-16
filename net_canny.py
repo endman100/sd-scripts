@@ -73,8 +73,6 @@ class CannyEdgeDetector(nn.Module):
         self.directional_filter.bias = torch.nn.Parameter(torch.from_numpy(np.zeros(shape=(all_filters.shape[0],))).to(self.vae_dtype), requires_grad=False)
 
 
-        self.pixel_range = torch.tensor([range(1048576)], device=self.device, dtype=self.vae_dtype, requires_grad=False)
-
     def forward(self, img):
         img_r = img[:,0:1]
         img_g = img[:,1:2]
@@ -119,24 +117,13 @@ class CannyEdgeDetector(nn.Module):
         
         inidices_positive = (grad_orientation / 45) % 8
         inidices_negative = ((grad_orientation / 45) + 4) % 8
-
-        height = inidices_positive.size()[2]
-        width = inidices_positive.size()[3]
-        pixel_count = height * width
-        indices = (inidices_positive.view(-1) * pixel_count + self.pixel_range).squeeze().long()
-        print("Shape of all_filtered before view(-1):", inidices_positive.view(-1).shape, inidices_positive.view(-1).max(), inidices_positive.view(-1).min())
-        print("Shape of all_filtered before view(-1):", (inidices_positive.view(-1) * pixel_count).shape, (inidices_positive.view(-1) * pixel_count).max(), (inidices_positive.view(-1) * pixel_count).min())
-        print("Shape of all_filtered before view(-1):", indices.shape, indices.max(), indices.min())
-
-        channel_select_filtered_positive = all_filtered.view(-1)[indices].view(1,height,width)
-
-        indices = (inidices_negative.view(-1) * pixel_count + self.pixel_range).squeeze()
-        channel_select_filtered_negative = all_filtered.view(-1)[indices.long()].view(1,height,width)
-
+        inidices_positive = inidices_positive.long()
+        inidices_negative = inidices_negative.long()
+        channel_select_filtered_positive = torch.gather(all_filtered, 1, inidices_positive).squeeze(1)  # Squeeze the single-direction dimension
+        channel_select_filtered_negative = torch.gather(all_filtered, 1, inidices_negative).squeeze(1)
         channel_select_filtered = torch.stack([channel_select_filtered_positive,channel_select_filtered_negative])
-
-        is_max = channel_select_filtered.min(dim=0)[0] > 0.0
-        is_max = torch.unsqueeze(is_max, dim=0)
+        is_max = channel_select_filtered.min(dim=1)[0] > 0.0
+        is_max = torch.unsqueeze(is_max, dim=1)
 
         thin_edges = grad_mag.clone()
         thin_edges[is_max==0] = 0.0

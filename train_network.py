@@ -48,7 +48,7 @@ from library.custom_train_functions import (
 )
 
 # debug
-torch.autograd.set_detect_anomaly(True)
+# torch.autograd.set_detect_anomaly(True)
 
 class NetworkTrainer:
     def __init__(self):
@@ -824,28 +824,37 @@ class NetworkTrainer:
                         target = noise_scheduler.get_velocity(latents, noise, timesteps)
                     else:
                         target = noise
-                    loss = torch.nn.functional.mse_loss(noise_pred.float(), target.float(), reduction="none")
-                    loss = loss.mean([1, 2, 3])
+                    # loss = torch.nn.functional.mse_loss(noise_pred.float(), target.float(), reduction="none")
+                    # loss = loss.mean([1, 2, 3])
 
-                    loss_weights = batch["loss_weights"]  # 各sampleごとのweight
-                    loss = loss * loss_weights
-
+                    # loss_weights = batch["loss_weights"]  # 各sampleごとのweight
+                    # loss = loss * loss_weights
                     with torch.no_grad():
                         latents_pred = noisy_latents - noise_pred
                         pre_image = self.decode_latents(vae, latents_pred)
-                        gt_image = batch["images"].to(dtype=vae_dtype)
-                        blurred_img, grad_mag, grad_orientation, thin_edges, thresholded, early_threshold = canny_model(pre_image)
-                        blurred_img_gt, grad_mag_gt, grad_orientation_gt, thin_edges_gt, thresholded_gt, early_threshold_gt = canny_model(gt_image)
-                        loss_canny = torch.nn.functional.mse_loss(thresholded, thresholded_gt, reduction="none")
-                        loss_canny = loss_canny.mean([1, 2, 3])
-                        # loss_image = torch.nn.functional.mse_loss(pre_image, gt_image, reduction="none")
-                        # loss_image = loss_image.mean([1, 2, 3])
-                        # print(loss_image)
-                    loss = loss + loss_canny
-                    # thin_edge_image = thresholded_gt[0].cpu().permute(1, 2, 0).float().numpy()
-                    # cv2.imshow("image", thin_edge_image)
-                    # cv2.waitKey(1)
+                        # pre_noisy_latents = self.decode_latents(vae, noisy_latents)
+                        # _pre_image = pre_image[0].cpu().permute(1, 2, 0).float().numpy()
+                        # _pre_noisy_latents = pre_noisy_latents[0].cpu().permute(1, 2, 0).float().numpy()
+                        # cv2.imshow("_pre_image", _pre_image)
+                        # cv2.imshow("_pre_noisy_latents", _pre_noisy_latents)
+                        # cv2.waitKey(0)
+
+                    gt_image = batch["images"].to(dtype=vae_dtype)
+                    pre_image.requires_grad_(True)
+                    gt_image.requires_grad_(True)
+                        
                     
+                    blurred_img, grad_mag, grad_orientation, thin_edges, thresholded, early_threshold = canny_model(pre_image)
+                    blurred_img_gt, grad_mag_gt, grad_orientation_gt, thin_edges_gt, thresholded_gt, early_threshold_gt = canny_model(gt_image)
+                    loss_canny = torch.nn.functional.mse_loss(thresholded, thresholded_gt, reduction="none")
+                    loss_canny = loss_canny.mean([1, 2, 3])
+                    loss_canny /= 255.0
+                    # loss_image = torch.nn.functional.mse_loss(pre_image, gt_image, reduction="none")
+                    # loss_image = loss_image.mean([1, 2, 3])
+                    print(loss_canny)
+                    loss = loss_canny
+                    
+                        
 
 
                     if args.min_snr_gamma:
