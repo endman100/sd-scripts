@@ -64,6 +64,63 @@ def apply_snr_weight(loss, timesteps, noise_scheduler, gamma):
     loss = loss * snr_weight
     return loss
 
+def decode_latents(vae, latents):
+        
+        latents = 1 / 0.18215 * latents
+        vae_dtype = vae.dtype
+        latents = latents.to(vae_dtype)
+        image = vae.decode(latents).sample
+        # image = (image / 2 + 0.5).clamp(0, 1)
+        # we always cast to float32 as this does not cause significant overhead and is compatible with bfloat16
+        # image = image.cpu().permute(0, 2, 3, 1).float().numpy()
+        return image
+
+def apply_canny_loss(noisy_latents, noise_pred, batch, vae, vae_dtype, canny_model, loss, loss_weight=1.0):
+    with torch.no_grad():
+        latents_pred = noisy_latents - noise_pred
+        pre_image = decode_latents(vae, latents_pred)
+        # pre_noisy_latents = self.decode_latents(vae, noisy_latents)
+        # _pre_image = pre_image[0].cpu().permute(1, 2, 0).float().numpy()
+        # _pre_noisy_latents = pre_noisy_latents[0].cpu().permute(1, 2, 0).float().numpy()
+        # cv2.imshow("_pre_image", _pre_image)
+        # cv2.imshow("_pre_noisy_latents", _pre_noisy_latents)
+        # cv2.waitKey(0)
+
+    gt_image = batch["images"].to(dtype=vae_dtype)
+    pre_image.requires_grad_(True)
+    gt_image.requires_grad_(True)
+        
+    
+    blurred_img, grad_mag, grad_orientation, thin_edges, thresholded, early_threshold = canny_model(pre_image)
+    blurred_img_gt, grad_mag_gt, grad_orientation_gt, thin_edges_gt, thresholded_gt, early_threshold_gt = canny_model(gt_image)
+    loss_canny = torch.nn.functional.mse_loss(thresholded, thresholded_gt, reduction="none")
+    loss_canny = loss_canny.mean([1, 2, 3])
+    loss_canny /= 255.0
+    # print("loss_canny", loss_canny)
+    loss = (1 - loss_weight)*loss + loss_weight * loss_canny
+    return loss
+def apply_image_loss(noisy_latents, noise_pred, batch, vae, vae_dtype, loss, loss_weight=1.0):
+    # with torch.no_grad():
+    latents_pred = noisy_latents - noise_pred
+    pre_image = decode_latents(vae, latents_pred)
+    # _pre_image = pre_image[0].cpu().permute(1, 2, 0).float().numpy()
+    # _pre_noisy_latents = pre_noisy_latents[0].cpu().permute(1, 2, 0).float().numpy()
+    # cv2.imshow("_pre_image", _pre_image)
+    # cv2.imshow("_pre_noisy_latents", _pre_noisy_latents)
+    # cv2.waitKey(0)
+
+    gt_image = batch["images"].to(dtype=vae_dtype)
+    pre_image.requires_grad_(True)
+    gt_image.requires_grad_(True)
+        
+    
+    loss_image = torch.nn.functional.mse_loss(pre_image, gt_image, reduction="none")
+    loss_image = loss_image.mean([1, 2, 3])
+    # print("loss_image", loss_image)
+    loss = (1 - loss_weight)*loss + loss_weight * loss_image
+    return loss
+
+
 
 def scale_v_prediction_loss_like_noise_prediction(loss, timesteps, noise_scheduler):
     scale = get_snr_scale(timesteps, noise_scheduler)

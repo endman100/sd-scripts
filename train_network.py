@@ -45,6 +45,8 @@ from library.custom_train_functions import (
     prepare_scheduler_for_custom_training,
     scale_v_prediction_loss_like_noise_prediction,
     add_v_prediction_like_loss,
+    apply_canny_loss,
+    apply_image_loss
 )
 
 # debug
@@ -130,16 +132,7 @@ class NetworkTrainer:
     def sample_images(self, accelerator, args, epoch, global_step, device, vae, tokenizer, text_encoder, unet):
         train_util.sample_images(accelerator, args, epoch, global_step, device, vae, tokenizer, text_encoder, unet)
 
-    def decode_latents(self, vae, latents):
-        
-        latents = 1 / 0.18215 * latents
-        vae_dtype = vae.dtype
-        latents = latents.to(vae_dtype)
-        image = vae.decode(latents).sample
-        # image = (image / 2 + 0.5).clamp(0, 1)
-        # we always cast to float32 as this does not cause significant overhead and is compatible with bfloat16
-        # image = image.cpu().permute(0, 2, 3, 1).float().numpy()
-        return image
+    
     
     def train(self, args):
         session_id = random.randint(0, 2**32)
@@ -762,6 +755,8 @@ class NetworkTrainer:
         for param in vae.parameters():
             param.requires_grad = False
 
+        # if accelerator.sync_gradients: # 先sample_images察看結果
+        #     self.sample_images(accelerator, args, None, global_step, accelerator.device, vae, tokenizer, text_encoder, unet)
 
         # training loop
         for epoch in range(num_train_epochs):
@@ -773,6 +768,7 @@ class NetworkTrainer:
             network.on_epoch_start(text_encoder, unet)
 
             for step, batch in enumerate(train_dataloader):
+                
                 current_step.value = global_step
                 with accelerator.accumulate(network):
                     on_step_start(text_encoder, unet)
@@ -812,6 +808,7 @@ class NetworkTrainer:
                     noise, noisy_latents, timesteps = train_util.get_noise_noisy_latents_and_timesteps(
                         args, noise_scheduler, latents
                     )
+                    # print("timesteps: ", timesteps)
 
                     # Predict the noise residual
                     with accelerator.autocast():
@@ -824,37 +821,13 @@ class NetworkTrainer:
                         target = noise_scheduler.get_velocity(latents, noise, timesteps)
                     else:
                         target = noise
-                    # loss = torch.nn.functional.mse_loss(noise_pred.float(), target.float(), reduction="none")
-                    # loss = loss.mean([1, 2, 3])
+                    loss = torch.nn.functional.mse_loss(noise_pred.float(), target.float(), reduction="none")
+                    loss = loss.mean([1, 2, 3])
+                    loss_weights = batch["loss_weights"]  # 各sampleごとのweight
+                    loss = loss * loss_weights
 
-                    # loss_weights = batch["loss_weights"]  # 各sampleごとのweight
-                    # loss = loss * loss_weights
-                    with torch.no_grad():
-                        latents_pred = noisy_latents - noise_pred
-                        pre_image = self.decode_latents(vae, latents_pred)
-                        # pre_noisy_latents = self.decode_latents(vae, noisy_latents)
-                        # _pre_image = pre_image[0].cpu().permute(1, 2, 0).float().numpy()
-                        # _pre_noisy_latents = pre_noisy_latents[0].cpu().permute(1, 2, 0).float().numpy()
-                        # cv2.imshow("_pre_image", _pre_image)
-                        # cv2.imshow("_pre_noisy_latents", _pre_noisy_latents)
-                        # cv2.waitKey(0)
-
-                    gt_image = batch["images"].to(dtype=vae_dtype)
-                    pre_image.requires_grad_(True)
-                    gt_image.requires_grad_(True)
-                        
-                    
-                    blurred_img, grad_mag, grad_orientation, thin_edges, thresholded, early_threshold = canny_model(pre_image)
-                    blurred_img_gt, grad_mag_gt, grad_orientation_gt, thin_edges_gt, thresholded_gt, early_threshold_gt = canny_model(gt_image)
-                    loss_canny = torch.nn.functional.mse_loss(thresholded, thresholded_gt, reduction="none")
-                    loss_canny = loss_canny.mean([1, 2, 3])
-                    loss_canny /= 255.0
-                    # loss_image = torch.nn.functional.mse_loss(pre_image, gt_image, reduction="none")
-                    # loss_image = loss_image.mean([1, 2, 3])
-                    print(loss_canny)
-                    loss = loss_canny
-                    
-                        
+                    # loss = apply_canny_loss(noisy_latents, noise_pred, batch, vae, vae_dtype, canny_model, loss, loss_weight=1.0)
+                    loss = apply_image_loss(noisy_latents, noise_pred, batch, vae, vae_dtype, loss, loss_weight=1.0)
 
 
                     if args.min_snr_gamma:
@@ -873,10 +846,6 @@ class NetworkTrainer:
                     optimizer.step()
                     lr_scheduler.step()
                     optimizer.zero_grad(set_to_none=True)
-
-                    
-
-
 
                 if args.scale_weight_norms:
                     keys_scaled, mean_norm, maximum_norm = network.apply_max_norm_regularization(

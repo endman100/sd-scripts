@@ -4350,6 +4350,8 @@ def get_noise_noisy_latents_and_timesteps(args, noise_scheduler, latents):
     max_timestep = noise_scheduler.config.num_train_timesteps if args.max_timestep is None else args.max_timestep
 
     timesteps = torch.randint(min_timestep, max_timestep, (b_size,), device=latents.device)
+    # sigma = 6
+    # timesteps = ((torch.randn((b_size,), device=latents.device).clip(-sigma, sigma) + sigma) / (2*sigma)) * (max_timestep - min_timestep) + min_timestep
     timesteps = timesteps.long()
 
     # Add noise to the latents according to the noise magnitude at each timestep
