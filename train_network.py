@@ -827,7 +827,7 @@ class NetworkTrainer:
                     loss = loss * loss_weights
 
                     # loss = apply_canny_loss(noisy_latents, noise_pred, batch, vae, vae_dtype, canny_model, loss, loss_weight=1.0)
-                    loss = apply_image_loss(noisy_latents, noise_pred, batch, vae, vae_dtype, loss, loss_weight=1.0)
+                    # loss = apply_image_loss(noisy_latents, noise_pred, batch, vae, vae_dtype, loss, loss_weight=1.0)
 
 
                     if args.min_snr_gamma:
