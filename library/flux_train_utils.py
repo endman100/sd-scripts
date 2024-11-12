@@ -384,7 +384,7 @@ def compute_loss_weighting_for_sd3(weighting_scheme: str, sigmas=None):
 
 
 def get_noisy_model_input_and_timesteps(
-    args, noise_scheduler, latents, noise, device, dtype
+    args, noise_scheduler, latents, noise, device, dtype, **kwargs
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     bsz, _, h, w = latents.shape
     sigmas = None
@@ -420,6 +420,14 @@ def get_noisy_model_input_and_timesteps(
         t = timesteps.view(-1, 1, 1, 1)
         timesteps = timesteps * 1000.0
         noisy_model_input = (1 - t) * latents + t * noise
+    elif args.timestep_sampling == "faster":
+        current_step = kwargs["current_step"]
+        all_steps = kwargs["all_steps"]
+        timesteps = get_faster_timesteps(args, bsz, latents.device, current_step, all_steps, noise_scheduler.config.num_train_timesteps) #0~1000
+
+        t = timesteps.view(-1, 1, 1, 1)
+        t = t.float() / 1000.0
+        noisy_model_input = (1 - t) * latents + t * noise
     else:
         # Sample a random timestep for each image
         # for weighting schemes where we sample timesteps non-uniformly
@@ -438,6 +446,27 @@ def get_noisy_model_input_and_timesteps(
         noisy_model_input = sigmas * noise + (1.0 - sigmas) * latents
 
     return noisy_model_input, timesteps, sigmas
+
+def get_faster_timesteps(args, batch_size, latents_device, current_step, all_steps, num_train_timesteps):
+    min_timesteps = args.timesteps_min
+    max_timesteps = min(args.timesteps_max, num_train_timesteps)
+    min_timesteps_end = args.timesteps_min_end if args.timesteps_min_end is not None else min_timesteps
+    max_timesteps_end = args.timesteps_max_end if args.timesteps_max_end is not None else max_timesteps
+    max_timesteps_end = min(max_timesteps_end, num_train_timesteps)
+
+    # 根據設定的schedule_type 調整timesteps上限和下限
+    min_timesteps = min_timesteps - (min_timesteps_end - min_timesteps) * 0.5 * (np.cos(np.pi * current_step / all_steps) - 1)
+    max_timesteps = max_timesteps - (max_timesteps_end - max_timesteps) * 0.5 * (np.cos(np.pi * current_step / all_steps) - 1)
+
+    # 根據設定的取樣方式來在上限和下限中取樣timesteps
+    timesteps_range = max_timesteps - min_timesteps
+    sigma = 6
+    sigma_range = ((torch.randn((batch_size,), device=latents_device).clip(-sigma, sigma) + sigma) / (2 * sigma))
+    timesteps =  sigma_range * timesteps_range + min_timesteps
+
+
+    timesteps = timesteps.long()
+    return timesteps
 
 
 def apply_model_prediction_type(args, model_pred, noisy_model_input, sigmas):
@@ -596,7 +625,7 @@ def add_flux_train_arguments(parser: argparse.ArgumentParser):
 
     parser.add_argument(
         "--timestep_sampling",
-        choices=["sigma", "uniform", "sigmoid", "shift", "flux_shift"],
+        choices=["sigma", "uniform", "sigmoid", "shift", "flux_shift", "faster"],
         default="sigma",
         help="Method to sample timesteps: sigma-based, uniform random, sigmoid of random normal, shift of sigmoid and FLUX.1 shifting."
         " / タイムステップをサンプリングする方法：sigma、random uniform、random normalのsigmoid、sigmoidのシフト、FLUX.1のシフト。",
@@ -622,3 +651,9 @@ def add_flux_train_arguments(parser: argparse.ArgumentParser):
         default=3.0,
         help="Discrete flow shift for the Euler Discrete Scheduler, default is 3.0. / Euler Discrete Schedulerの離散フローシフト、デフォルトは3.0。",
     )
+
+    # 提供客製化的timesteps範圍 用以faster timestep 方法
+    parser.add_argument("--timesteps_min", type=int, default=900, help="Minimum timesteps for faster sampling.")
+    parser.add_argument("--timesteps_max", type=int, default=999, help="Maximum timesteps for faster sampling.")
+    parser.add_argument("--timesteps_min_end", type=int, default=1, help="Minimum timesteps for faster sampling at the end.")
+    parser.add_argument("--timesteps_max_end", type=int, default=999, help="Maximum timesteps for faster sampling at the end.")

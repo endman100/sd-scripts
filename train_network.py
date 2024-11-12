@@ -1109,7 +1109,9 @@ class NetworkTrainer:
                 skipped_dataloader = accelerator.skip_first_batches(train_dataloader, initial_step - 1)
                 initial_step = 1
 
+            epoch_size = len(train_dataloader)
             for step, batch in enumerate(skipped_dataloader or train_dataloader):
+                wait_for_temperature_drop()
                 current_step.value = global_step
                 if initial_step > 0:
                     initial_step -= 1
@@ -1195,6 +1197,9 @@ class NetworkTrainer:
                         network,
                         weight_dtype,
                         train_unet,
+                        current_step=step,
+                        all_steps=epoch_size,
+
                     )
 
                     loss = train_util.conditional_loss(
@@ -1262,7 +1267,7 @@ class NetworkTrainer:
                 current_loss = loss.detach().item()
                 loss_recorder.add(epoch=epoch, step=step, loss=current_loss)
                 avr_loss: float = loss_recorder.moving_average
-                logs = {"avr_loss": avr_loss}  # , "lr": lr_scheduler.get_last_lr()[0]}
+                logs = {"avr_loss": avr_loss, "timesteps": timesteps[0].item()}  # , "lr": lr_scheduler.get_last_lr()[0]}
                 progress_bar.set_postfix(**logs)
 
                 if args.scale_weight_norms:
@@ -1272,6 +1277,7 @@ class NetworkTrainer:
                     logs = self.generate_step_logs(
                         args, current_loss, avr_loss, lr_scheduler, lr_descriptions, keys_scaled, mean_norm, maximum_norm
                     )
+                    logs["loss/timesteps"] = timesteps[0].item()
                     accelerator.log(logs, step=global_step)
 
                 if global_step >= args.max_train_steps:
@@ -1321,6 +1327,51 @@ class NetworkTrainer:
             save_model(ckpt_name, network, global_step, num_train_epochs, force_sync_upload=True)
 
             logger.info("model saved.")
+
+import time
+from pynvml import nvmlInit, nvmlDeviceGetHandleByIndex, nvmlDeviceGetTemperature, NVML_TEMPERATURE_GPU
+import psutil
+import subprocess
+nvmlInit()
+
+# 定義監測 GPU 溫度的函數
+def get_gpu_temperature():
+    # 執行 nvidia-smi 命令並獲取 GPU 溫度
+    try:
+        result = subprocess.run(['nvidia-smi', '--query-gpu=temperature.gpu', '--format=csv,noheader,nounits'],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        temperature = int(result.stdout.strip())
+        return temperature
+    except Exception as e:
+        print("無法獲取 GPU 溫度:", e)
+        return None
+
+# 定義取得 CPU 溫度的函數
+def get_cpu_temperature():
+    temps = psutil.sensors_temperatures()
+    if 'coretemp' in temps:
+        # 取得所有核心溫度的平均值
+        core_temps = [temp.current for temp in temps['coretemp']]
+        return sum(core_temps) / len(core_temps)
+    else:
+        print("無法讀取 CPU 溫度，請確認系統支援")
+        return None
+
+# 檢查並等待 GPU 和 CPU 溫度下降的函數
+def wait_for_temperature_drop(gpu_threshold=70, cpu_threshold=70):
+    while True:
+        gpu_temp = get_gpu_temperature()
+        if(gpu_temp is None):
+            print("無法獲取溫度，請確認系統支援")
+            break
+        
+        if gpu_temp < gpu_threshold :
+            print(f"GPU 溫度 {gpu_temp}°C 和 °C（如可用）已降至 {gpu_threshold}°C 以下，繼續訓練")
+            break
+        else:
+            print(f"GPU 溫度: {gpu_temp}°C, °C（如可用），高於 {gpu_threshold}°C ，等待降溫...")
+        
+        time.sleep(1)  # 每隔 1 秒重新檢查一次溫度
 
 
 def setup_parser() -> argparse.ArgumentParser:

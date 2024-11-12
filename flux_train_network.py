@@ -3,7 +3,7 @@ import copy
 import math
 import random
 from typing import Any, Optional
-
+import time
 import torch
 from accelerate import Accelerator
 from library.device_utils import init_ipex, clean_memory_on_device
@@ -340,6 +340,7 @@ class FluxNetworkTrainer(train_network.NetworkTrainer):
         network,
         weight_dtype,
         train_unet,
+        **kwargs,
     ):
         # Sample noise that we'll add to the latents
         noise = torch.randn_like(latents)
@@ -347,7 +348,7 @@ class FluxNetworkTrainer(train_network.NetworkTrainer):
 
         # get noisy model input and timesteps
         noisy_model_input, timesteps, sigmas = flux_train_utils.get_noisy_model_input_and_timesteps(
-            args, noise_scheduler, latents, noise, accelerator.device, weight_dtype
+            args, noise_scheduler, latents, noise, accelerator.device, weight_dtype, **kwargs
         )
 
         # pack latents and get img_ids
