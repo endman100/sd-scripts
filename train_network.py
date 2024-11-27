@@ -1208,7 +1208,6 @@ class NetworkTrainer:
                         train_unet,
                         current_step=step,
                         all_steps=epoch_size,
-
                     )
 
                     loss = train_util.conditional_loss(
@@ -1277,7 +1276,7 @@ class NetworkTrainer:
                 current_loss = loss.detach().item()
                 loss_recorder.add(epoch=epoch, step=step, loss=current_loss)
                 avr_loss: float = loss_recorder.moving_average
-                logs = {"avr_loss": avr_loss, "timesteps": timesteps[0].item()}  # , "lr": lr_scheduler.get_last_lr()[0]}
+                logs = {"avr_loss": avr_loss, "timesteps": torch.mean(timesteps.float()).item()}  # , "lr": lr_scheduler.get_last_lr()[0]}
                 progress_bar.set_postfix(**logs)
 
                 if args.scale_weight_norms:

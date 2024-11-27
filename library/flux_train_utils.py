@@ -443,6 +443,7 @@ def get_noisy_model_input_and_timesteps(
     return noisy_model_input, timesteps, sigmas
 
 def get_faster_timesteps(args, batch_size, latents_device, current_step, all_steps, num_train_timesteps):
+    # 計算全局timesteps範圍
     min_timesteps = args.timesteps_min
     max_timesteps = min(args.timesteps_max, num_train_timesteps)
     min_timesteps_end = args.timesteps_min_end if args.timesteps_min_end is not None else min_timesteps
@@ -453,14 +454,26 @@ def get_faster_timesteps(args, batch_size, latents_device, current_step, all_ste
     min_timesteps = min_timesteps - (min_timesteps_end - min_timesteps) * 0.5 * (np.cos(np.pi * current_step / all_steps) - 1)
     max_timesteps = max_timesteps - (max_timesteps_end - max_timesteps) * 0.5 * (np.cos(np.pi * current_step / all_steps) - 1)
 
-    # 根據設定的取樣方式來在上限和下限中取樣timesteps
+    ##根據batch_size決定各data取樣timesteps範圍
+    accumulation_steps = args.accumulation_steps
+    accumulation_index = current_step % accumulation_steps
     timesteps_range = max_timesteps - min_timesteps
-    sigma = 6
-    sigma_range = ((torch.randn((batch_size,), device=latents_device).clip(-sigma, sigma) + sigma) / (2 * sigma))
-    timesteps =  sigma_range * timesteps_range + min_timesteps
+    real_batch_size = batch_size * accumulation_steps
+    timesteps = torch.zeros((batch_size,), device=latents_device)
+    for i in range(batch_size):
+        real_batch_index = accumulation_index * batch_size + i
+        sub_min_timesteps = min_timesteps + (timesteps_range / real_batch_size) * real_batch_index
+        sub_max_timesteps = min_timesteps + (timesteps_range / real_batch_size) * (real_batch_index + 1)
 
-
+        # 根據設定的取樣方式來在上限和下限中取樣timesteps
+        sub_timesteps_range = sub_max_timesteps - sub_min_timesteps
+        sigma = 6
+        sigma_range = ((torch.randn((1,), device=latents_device).clip(-sigma, sigma) + sigma) / (2 * sigma))
+        timestep = sigma_range * sub_timesteps_range + sub_min_timesteps
+        timesteps[i] = timestep
+        # print(f"sub_min_timesteps: {sub_min_timesteps}, sub_max_timesteps: {sub_max_timesteps}, timestep: {timestep}")
     timesteps = timesteps.long()
+    print(f"min_timesteps: {min_timesteps}, max_timesteps: {max_timesteps} timesteps: {timesteps}")
     return timesteps
 
 
