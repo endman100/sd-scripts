@@ -486,7 +486,7 @@ def get_faster_timesteps(args, batch_size, latents_device, current_step, all_ste
     max_timesteps = max_timesteps - (max_timesteps_end - max_timesteps) * 0.5 * (np.cos(np.pi * current_step / all_steps) - 1)
 
     ##根據batch_size決定各data取樣timesteps範圍
-    accumulation_steps = args.accumulation_steps
+    accumulation_steps = args.gradient_accumulation_steps
     accumulation_index = current_step % accumulation_steps
     timesteps_range = max_timesteps - min_timesteps
     real_batch_size = batch_size * accumulation_steps
