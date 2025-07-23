@@ -14,68 +14,68 @@ workspace = "D:/AIGC/model/slot_checkpoints/"
 
 
 # 覆蓋原測試程式參數
-args.xformers = True
-args.bf16 = True
-args.no_half_vae = True
-args.W = 1024
-args.H = 1024
-args.scale = 7
-args.sampler = "ddim"
-args.steps = 30
-args.batch_size = 2
-args.images_per_prompt = 1
-args.seed = 0
+# args.xformers = True
+# args.bf16 = True
+# args.no_half_vae = True
+# args.W = 1024
+# args.H = 1024
+# args.scale = 7
+# args.sampler = "ddim"
+# args.steps = 30
+# args.batch_size = 2
+# args.images_per_prompt = 1
+# args.seed = 0
 
 temp_dir = os.path.join(workspace, "temp")  
 
-# 測試自然語言prompt
-args.from_file = "./prompts/NaturalLanguagePrompts.txt"
-args.outdir = os.path.join(temp_dir, "NaturalLanguagePrompts")
-if os.path.exists(args.outdir):
-    shutil.rmtree(args.outdir)
-del sdxl_gen_img
-import sdxl_gen_img
-gc.collect()
-sdxl_gen_img.main(args)
+# # 測試自然語言prompt
+# args.from_file = "./prompts/NaturalLanguagePrompts.txt"
+# args.outdir = os.path.join(temp_dir, "NaturalLanguagePrompts")
+# if os.path.exists(args.outdir):
+#     shutil.rmtree(args.outdir)
+# del sdxl_gen_img
+# import sdxl_gen_img
+# gc.collect()
+# sdxl_gen_img.main(args)
 
-# 測試一般prompt
-args.from_file = "./prompts/NormalPrompt.txt"
-args.outdir = os.path.join(temp_dir, "NormalPrompts")
-if os.path.exists(args.outdir):
-    shutil.rmtree(args.outdir)
-del sdxl_gen_img
-import sdxl_gen_img
-gc.collect()
-sdxl_gen_img.main(args)
+# # 測試一般prompt
+# args.from_file = "./prompts/NormalPrompt.txt"
+# args.outdir = os.path.join(temp_dir, "NormalPrompts")
+# if os.path.exists(args.outdir):
+#     shutil.rmtree(args.outdir)
+# del sdxl_gen_img
+# import sdxl_gen_img
+# gc.collect()
+# sdxl_gen_img.main(args)
 
-# 測試動物prompt
-args.from_file = "./prompts/AnimalPrompts.txt"
-args.outdir = os.path.join(temp_dir, "AnimalPrompts")
-if os.path.exists(args.outdir):
-    shutil.rmtree(args.outdir)
-del sdxl_gen_img
-import sdxl_gen_img
-gc.collect()
-sdxl_gen_img.main(args)
+# # 測試動物prompt
+# args.from_file = "./prompts/AnimalPrompts.txt"
+# args.outdir = os.path.join(temp_dir, "AnimalPrompts")
+# if os.path.exists(args.outdir):
+#     shutil.rmtree(args.outdir)
+# del sdxl_gen_img
+# import sdxl_gen_img
+# gc.collect()
+# sdxl_gen_img.main(args)
 
-# 測試風格prompt
-args.from_file = "./prompts/StylePrompts.txt"
-args.outdir = os.path.join(temp_dir, "StylePrompts")
-if os.path.exists(args.outdir):
-    shutil.rmtree(args.outdir)
-del sdxl_gen_img
-import sdxl_gen_img
-gc.collect()
-sdxl_gen_img.main(args)
+# # 測試風格prompt
+# args.from_file = "./prompts/StylePrompts.txt"
+# args.outdir = os.path.join(temp_dir, "StylePrompts")
+# if os.path.exists(args.outdir):
+#     shutil.rmtree(args.outdir)
+# del sdxl_gen_img
+# import sdxl_gen_img
+# gc.collect()
+# sdxl_gen_img.main(args)
 
-# 測試slot風格prompt
-args.from_file = "./prompts/SlotStylePrompts.txt"
-args.outdir = os.path.join(temp_dir, "SlotStylePrompts")
-if os.path.exists(args.outdir):
-    shutil.rmtree(args.outdir)
-del sdxl_gen_img
-import sdxl_gen_img
-gc.collect()
+# # 測試slot風格prompt
+# args.from_file = "./prompts/SlotStylePrompts.txt"
+# args.outdir = os.path.join(temp_dir, "SlotStylePrompts")
+# if os.path.exists(args.outdir):
+#     shutil.rmtree(args.outdir)
+# del sdxl_gen_img
+# import sdxl_gen_img
+# gc.collect()
 sdxl_gen_img.main(args)
 
 

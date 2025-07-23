@@ -1,6 +1,6 @@
 # training with captions
-import faulthandler
-faulthandler.enable()
+# import faulthandler
+# faulthandler.enable()
 
 import argparse
 import gc
@@ -180,10 +180,10 @@ def get_preload_data(vae, text_encoder1, text_encoder2, tokenizer1, tokenizer2, 
                      batch, device, vae_dtype, weight_dtype, args):
     with torch.no_grad():
         latents = get_letents(vae, batch, device, vae_dtype, weight_dtype)
-        print("latents done")
+        # print("latents done")
 
         encoder_hidden_states1, encoder_hidden_states2, pool2 = get_text_embedding(text_encoder1, text_encoder2, tokenizer1, tokenizer2, batch, device, weight_dtype, args)
-        print("text encode done")
+        # print("text encode done")
 
         # get size embeddings
         orig_size = batch["original_sizes_hw"]
@@ -480,6 +480,8 @@ def train(args):
             
     if args.cache_latents:
         with torch.no_grad():
+            vae.eval()
+            vae.to(accelerator.device, dtype=vae_dtype)
             train_dataset_group.cache_latents(vae, args.vae_batch_size, args.cache_latents_to_disk, accelerator.is_main_process)
         accelerator.wait_for_everyone()
     
@@ -556,16 +558,16 @@ def train(args):
         current_epoch.value = epoch + 1
         loss_total = 0
         for step, batch in enumerate(train_dataloader):
-            print("start")
+            # print("start")
             current_step.value = global_step
             noise, noisy_latents, timesteps, text_embedding, vector_embedding = get_preload_data(vae, text_encoder1, text_encoder2, tokenizer1, tokenizer2, noise_scheduler, batch, accelerator.device, vae_dtype, weight_dtype, args)
             
             with accelerator.accumulate(training_models[0]):  # 複数モデルに対応していない模様だがとりあえずこうしておく
-                print("unet before")
+                # print("unet before")
                 # print(f"noisy_latents:{noisy_latents.dtype}, timesteps:{timesteps.dtype}, text_embedding:{text_embedding.dtype}, vector_embedding:{vector_embedding.dtype}, unet:{unet.dtype}")
                 with accelerator.autocast():
                     noise_pred = unet(noisy_latents, timesteps, text_embedding, vector_embedding)
-                print("unet done")
+                # print("unet done")
 
                 if args.min_snr_gamma or args.scale_v_pred_loss_like_noise_pred or args.v_pred_like_loss:
                     # do not mean over batch dimension for snr weight or scale v-pred loss
@@ -585,21 +587,21 @@ def train(args):
                     loss = torch.nn.functional.mse_loss(noise_pred, noise.float(), reduction="mean")
 
 
-                print("loss done", loss)
-                memory_usage_in_mb = get_memory_usage()
-                print(f"Current memory usage: {memory_usage_in_mb:.2f} MB")
+                # print("loss done", loss)
+                # memory_usage_in_mb = get_memory_usage()
+                # print(f"Current memory usage: {memory_usage_in_mb:.2f} MB")
                 # torch.cuda.synchronize()
-                print("synchronize done")
+                # print("synchronize done")
                 accelerator.backward(loss)
                 # torch.cuda.synchronize()
-                print("backward done")
+                # print("backward done")
                 if(global_step % args.accumulation_n_steps == 0):
-                    print("clip_grad_norm_")
+                    # print("clip_grad_norm_")
                     if args.max_grad_norm != 0.0 and accelerator.sync_gradients:
                         params_to_clip = []
                         for m in training_models:
                             params_to_clip.extend(m.parameters())
-                        print("accelerator clip_grad_norm_")
+                        # print("accelerator clip_grad_norm_")
                         
                         for param in params_to_clip: # 遍歷所有參數
                             if param.grad is not None:
@@ -610,20 +612,20 @@ def train(args):
 
                         accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
 
-                    print("optimizer step")
+                    # print("optimizer step")
                     optimizer.step()
                     lr_scheduler.step()
 
-                    print("optimizer zero_grad")
+                    # print("optimizer zero_grad")
                     optimizer.zero_grad(set_to_none=True)
-                print("accumulate done")
+                # print("accumulate done")
             
             current_loss = loss.detach().item()  # 平均なのでbatch sizeは関係ないはず
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
                 
                 progress_bar.update(1)
-                print("args.sample_every_n_steps", args.sample_every_n_steps)
+                # print("args.sample_every_n_steps", args.sample_every_n_steps)
                 if args.sample_every_n_steps is not None and global_step % args.sample_every_n_steps == 0:
                     test(training_models, accelerator, args, global_step, text_encoder1, text_encoder2, tokenizer1, tokenizer2, vae, unet, weight_dtype, vae_dtype)
 
@@ -676,7 +678,7 @@ def train(args):
 
             if global_step >= args.max_train_steps:
                 break
-            print("step done")
+            # print("step done")
 
         if args.logging_dir is not None:
             logs = {"loss/epoch": loss_total / len(train_dataloader)}
