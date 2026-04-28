@@ -50,6 +50,12 @@ Stable Diffusion等の画像生成モデルの学習、モデルによる画像�
 
 ### 更新履歴
 
+- 次のリリースに含まれる予定の主な変更点は以下の通りです。リリース前の変更点は予告なく変更される可能性があります。
+    - Intel GPUの互換性を向上しました。[PR #2307](https://github.com/kohya-ss/sd-scripts/pull/2307) WhitePr氏に感謝します。
+
+- **Version 0.10.3 (2026-04-02):**
+    - Animaでfp16で学習する際の安定性をさらに改善しました。[PR #2302](https://github.com/kohya-ss/sd-scripts/pull/2302) 問題をご報告いただいた方々に深く感謝します。
+
 - **Version 0.10.2 (2026-03-30):**
     - SD/SDXLのLECO学習に対応しました。[PR #2285](https://github.com/kohya-ss/sd-scripts/pull/2285) および [PR #2294](https://github.com/kohya-ss/sd-scripts/pull/2294) umisetokikaze氏に深く感謝します。
         - 詳細は[ドキュメント](./docs/train_leco.md)をご覧ください。
