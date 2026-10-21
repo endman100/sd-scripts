@@ -29,6 +29,32 @@ FP8_OPTIMIZATION_TARGET_KEYS = ["blocks", ""]
 FP8_OPTIMIZATION_EXCLUDE_KEYS = ["_embedder", "norm", "adaln", "final_layer", ".embed."]
 
 
+def _infer_anima_num_blocks(dit_path, default: int = 28) -> int:
+    """Infer the DiT block count from the safetensors header (e.g. 40-block Anima 2.9B merges)."""
+    import json
+    import re
+    import struct
+
+    paths = dit_path if isinstance(dit_path, (list, tuple)) else [dit_path]
+    num_blocks = 0
+    for path in paths:
+        if not isinstance(path, str) or not path.endswith(".safetensors"):
+            continue
+        try:
+            with open(path, "rb") as f:
+                header = json.loads(f.read(struct.unpack("<Q", f.read(8))[0]))
+        except Exception as e:
+            logger.warning(f"Could not read safetensors header of {path}: {e}")
+            continue
+        for key in header:
+            m = re.match(r"^(?:net\.|model\.diffusion_model\.|diffusion_model\.)?blocks\.(\d+)\.", key)
+            if m:
+                num_blocks = max(num_blocks, int(m.group(1)) + 1)
+    if num_blocks and num_blocks != default:
+        logger.info(f"Checkpoint has {num_blocks} DiT blocks; using num_blocks={num_blocks}")
+    return num_blocks or default
+
+
 def load_anima_model(
     device: Union[str, torch.device],
     dit_path: str,
@@ -82,7 +108,7 @@ def load_anima_model(
         "max_fps": 30,
         "use_adaln_lora": True,
         "adaln_lora_dim": 256,
-        "num_blocks": 28,
+        "num_blocks": _infer_anima_num_blocks(dit_path),
         "num_heads": 16,
         "extra_per_block_abs_pos_emb": False,
         "rope_h_extrapolation_ratio": 4.0,
