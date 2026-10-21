@@ -20,7 +20,7 @@ This guide assumes you know the basics of LoRA training. For common options see 
 **Prerequisites:**
 
 * The repository is cloned and the Python environment is ready.
-* A training dataset is prepared. See the dataset configuration guide.
+* A training dataset is prepared. See the [Dataset Configuration Guide](./config_README-en.md).
 
 <details>
 <summary>日本語</summary>
@@ -32,7 +32,7 @@ This guide assumes you know the basics of LoRA training. For common options see 
 **前提条件:**
 
 * `sd-scripts`リポジトリのクローンとPython環境のセットアップが完了していること。
-* 学習用データセットの準備が完了していること。（データセットの準備については[データセット設定ガイド](link/to/dataset/config/doc)を参照してください）
+* 学習用データセットの準備が完了していること。（データセットの準備については[データセット設定ガイド](./config_README-ja.md)を参照してください）
 
 </details>
 
@@ -97,7 +97,7 @@ AE and T5-XXL models are same as FLUX.1, so you can use the same files. CLIP-L m
    - CLIP-Lモデルの`.safetensors`ファイル。例として`clip_l.safetensors`を使用します。
    - T5-XXLモデルの`.safetensors`ファイル。例として`t5xxl.safetensors`を使用します。
 4. **AutoEncoderモデルファイル:** FLUX.1に対応するAEモデルの`.safetensors`ファイル。例として`ae.safetensors`を使用します。
-5. **データセット定義ファイル (.toml):** 学習データセットの設定を記述したTOML形式のファイル。（詳細は[データセット設定ガイド](link/to/dataset/config/doc)を参照してください）。例として`my_flux_dataset_config.toml`を使用します。
+5. **データセット定義ファイル (.toml):** 学習データセットの設定を記述したTOML形式のファイル。（詳細は[データセット設定ガイド](./config_README-ja.md)を参照してください）。例として`my_flux_dataset_config.toml`を使用します。
 
 **必要なモデルのダウンロード**
 
@@ -231,6 +231,7 @@ The script adds FLUX.1 specific arguments. For common arguments (like `--output_
 * `--blocks_to_swap=<integer>` **[Experimental Feature]**
   - Setting to reduce VRAM usage by swapping parts of the model (Transformer blocks) between CPU and GPU. Specify the number of blocks to swap as an integer (e.g., `18`). Larger values reduce VRAM usage but decrease training speed. Adjust according to your GPU's VRAM capacity. Can be used with `gradient_checkpointing`.
   - Cannot be used with `--cpu_offload_checkpointing`.
+  - `--block_swap_h2d_only` enables the faster H2D-only block swap for LoRA training (requires `--gradient_checkpointing`). See [Block Swap](./block_swap.md).
 * `--cache_text_encoder_outputs`
   - Caches the outputs of CLIP-L and T5-XXL. This reduces memory usage.
 * `--cache_latents`, `--cache_latents_to_disk`
@@ -337,6 +338,10 @@ The `--timestep_sampling` option specifies how timesteps (0-1) are sampled:
 
 `--discrete_flow_shift` only applies when `--timestep_sampling` is set to `shift`.
 
+#### Visualizing the Timestep Distribution
+
+You can visualize the actual sampled-timestep distribution and loss weighting for your current settings — and confirm whether `--discrete_flow_shift` is actually applied — using the `--show_timesteps` and `--show_timesteps_resolution` options. A one-line summary of the configuration is also logged at the start of every training run. These options are shared between FLUX and Anima training; see the [Anima guide](anima_train_network.md#visualizing-the-timestep-distribution) for details.
+
 #### Model Prediction Processing
 
 The `--model_prediction_type` option specifies how to interpret and process model predictions:
@@ -368,6 +373,8 @@ FLUX.1の学習には多くの未知の点があり、いくつかの設定は�
 - タイムステップのサンプリング方法（`--timestep_sampling`）
 - モデル予測の処理方法（`--model_prediction_type`）
 - 推奨設定の組み合わせ
+
+タイムステップ分布の可視化（`--show_timesteps` / `--show_timesteps_resolution`）や、`--discrete_flow_shift`が適用されるかの確認方法については、FLUXとAnimaで共通のため[Animaのガイド](anima_train_network.md#タイムステップ分布の可視化)を参照してください。
 
 </details>
 
