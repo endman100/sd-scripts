@@ -19,6 +19,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _normalize_anima_state_dict_keys(sd: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    """Convert wrapped checkpoint keys to the bare Anima DiT state_dict format."""
+    for prefix in ("model.diffusion_model.", "diffusion_model."):
+        prefixed_count = sum(1 for key in sd if key.startswith(prefix))
+        if prefixed_count:
+            logger.info(f"Stripping '{prefix}' prefix from {prefixed_count} DiT checkpoint keys")
+            return {key[len(prefix) :] if key.startswith(prefix) else key: value for key, value in sd.items()}
+
+    return sd
+
+
 # Original Anima high-precision keys. Kept for reference, but not used currently.
 # # Keys that should stay in high precision (float32/bfloat16, not quantized)
 # KEEP_IN_HIGH_PRECISION = ["x_embedder", "t_embedder", "t_embedding_norm", "final_layer"]
@@ -96,6 +107,24 @@ def load_anima_model(
         "attn_mode": attn_mode,
         "split_attn": split_attn,
     }
+    # Infer num_blocks from checkpoint keys (e.g. 40-block "AM29" Anima merges); default config assumes 28.
+    try:
+        import re
+        from safetensors import safe_open
+
+        _block_ids = set()
+        for _p in dit_path if isinstance(dit_path, (list, tuple)) else [dit_path]:
+            with safe_open(_p, framework="pt") as _f:
+                for _k in _f.keys():
+                    _m = re.match(r"^(?:net\.|model\.diffusion_model\.|diffusion_model\.)?blocks\.(\d+)\.", _k)
+                    if _m:
+                        _block_ids.add(int(_m.group(1)))
+        if _block_ids and max(_block_ids) + 1 != dit_config["num_blocks"]:
+            logger.info(f"Checkpoint has {max(_block_ids) + 1} DiT blocks; overriding num_blocks={dit_config['num_blocks']}")
+            dit_config["num_blocks"] = max(_block_ids) + 1
+    except Exception as e:
+        logger.warning(f"Could not infer num_blocks from checkpoint, using default: {e}")
+
     with init_empty_weights():
         model = anima_models.Anima(**dit_config)
         if dit_weight_dtype is not None:
@@ -116,6 +145,7 @@ def load_anima_model(
         exclude_keys=FP8_OPTIMIZATION_EXCLUDE_KEYS,
         weight_transform_hooks=rename_hooks,
     )
+    sd = _normalize_anima_state_dict_keys(sd)
 
     if fp8_scaled:
         apply_fp8_monkey_patch(model, sd, use_scaled_mm=False)
